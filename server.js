@@ -235,7 +235,7 @@ app.get("/health", (req, res) => {
 // Root endpoint
 app.get("/", (req, res) => {
   res.json({
-    message: "🦄 Unicorn API is running!",
+    message: "Unicorn API is running.",
     endpoints: {
       getAll: "GET /unicorns",
       getOne: "GET /unicorns/:name",
@@ -249,6 +249,6 @@ app.get("/", (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Initial data loaded: ${unicornsData.length} unicorns`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Initial data loaded: ${unicornsData.length} unicorns`);
 });
