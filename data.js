@@ -120,4 +120,5 @@ const unicorns = [
   },
 ];
 
+module.exports = unicorns;
 console.log(unicorns);

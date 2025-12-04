@@ -1,111 +1,107 @@
-// Import library
+// server.js - Fixed version
 const express = require("express");
 const cors = require("cors");
-// Do not need. switching to array
-// const mongoose = require("mongoose");
-// const dotenv = require("dotenv");
-// const Unicorn = require("./models/Unicorns.js");
-// dotenv.config();
-
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; // Use Render's PORT
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
-// Import data
-const { unicorns } = require("./data.js");
+// Import data - FIXED
+// Method 1: If data.js exports the array directly
+const unicorns = require("./data.js");
+
+// Method 2: If data.js exports { unicorns }
+// const { unicorns } = require("./data.js");
+
 // Create mutable copy
 let unicornsData = [...unicorns];
 
-// Helper
+console.log(`Server started with ${unicornsData.length} initial unicorns`);
+
+// Helper function
 function filterUnicorns(query) {
-  return unicornsData.filter((unicorn) => {
-    // Names
-    if (
-      query.name &&
-      !unicorn.name.toLowerCase().includes(query.name.toLowerCase())
-    ) {
-      return false;
-    }
+  let filtered = [...unicornsData];
 
-    // Loves
-    if (query.loves) {
-      const lovesArray = query.loves
-        .split(",")
-        .map((item) => item.trim().toLowerCase());
-      const unicornsLoves = unicorn.loves.map((l) => l.toLowerCase());
+  // Name filter
+  if (query.name) {
+    filtered = filtered.filter((u) =>
+      u.name.toLowerCase().includes(query.name.toLowerCase()),
+    );
+  }
 
-      if (!lovesArray.every((love) => unicornsLoves.includes(love))) {
-        return false;
-      }
-    }
-    // gender
-    if (query.gender) {
-      let genderFilter = query.gender.toLowerCase();
-      if (genderFilter === "male") genderFilter = "m";
-      if (genderFilter === "female") genderFilter = "f";
+  // Loves filter
+  if (query.loves) {
+    const lovesArray = query.loves
+      .split(",")
+      .map((item) => item.trim().toLowerCase());
+    filtered = filtered.filter((u) => {
+      const unicornLoves = u.loves.map((l) => l.toLowerCase());
+      return lovesArray.every((love) => unicornLoves.includes(love));
+    });
+  }
 
-      if (unicorn.gender.toLowerCase() !== genderFilter) {
-        return false;
-      }
-    }
+  // Gender filter
+  if (query.gender) {
+    let genderFilter = query.gender.toLowerCase();
+    if (genderFilter === "male") genderFilter = "m";
+    if (genderFilter === "female") genderFilter = "f";
 
-    // weightGreaterThan
-    if (
-      query.weightGreaterThan &&
-      unicorn.weight <= parseFloat(query.weightGreaterThan)
-    ) {
-      return false;
-    }
+    filtered = filtered.filter((u) => u.gender.toLowerCase() === genderFilter);
+  }
 
-    // weightLessThan
-    if (
-      query.weightLessThan &&
-      unicorn.weight >= parseFloat(query.weightLessThan)
-    ) {
-      return false;
-    }
+  // Weight filters
+  if (query.weightGreaterThan) {
+    filtered = filtered.filter(
+      (u) => u.weight > parseFloat(query.weightGreaterThan),
+    );
+  }
 
-    // vampiresExists
-    if (query.vampiresExists !== undefined) {
-      const hasVampires = unicorn.vampires !== undefined;
-      if (query.vampiresExists === "true" && !hasVampires) return false;
-      if (query.vampiresExists === "false" && hasVampires) return false;
-    }
+  if (query.weightLessThan) {
+    filtered = filtered.filter(
+      (u) => u.weight < parseFloat(query.weightLessThan),
+    );
+  }
 
-    // vampiresGreaterThan
-    if (
-      query.vampiresGreaterThan &&
-      (!unicorn.vampires ||
-        unicorn.vampires <= parseInt(query.vampiresGreaterThan))
-    ) {
-      return false;
-    }
+  // Vampires exists
+  if (query.vampiresExists !== undefined) {
+    const wantsExists = query.vampiresExists === "true";
+    filtered = filtered.filter((u) =>
+      wantsExists ? u.vampires !== undefined : u.vampires === undefined,
+    );
+  }
 
-    // vaccinated
-    if (query.vaccinated !== undefined) {
-      if (query.vaccinated === "true" && !unicorn.vaccinated) return false;
-      if (query.vaccinated === "false" && unicorn.vaccinated) return false;
-    }
+  // Vampires greater than
+  if (query.vampiresGreaterThan) {
+    filtered = filtered.filter(
+      (u) => u.vampires && u.vampires > parseInt(query.vampiresGreaterThan),
+    );
+  }
 
-    return true;
-  });
+  // Vaccinated filter
+  if (query.vaccinated !== undefined) {
+    const wantsVaccinated = query.vaccinated === "true";
+    filtered = filtered.filter((u) => u.vaccinated === wantsVaccinated);
+  }
+
+  return filtered;
 }
 
-// GET
+// Routes
 app.get("/unicorns", (req, res) => {
   try {
-    const filteredUnicorns = filterUnicorns(req.query);
-    res.json(filteredUnicorns);
+    const filtered = filterUnicorns(req.query);
+    res.json(filtered);
   } catch (error) {
-    res.status(500).json({ error: "Internal server error" });
+    console.error("Error filtering unicorns:", error);
+    res
+      .status(500)
+      .json({ error: "Internal server error", details: error.message });
   }
 });
 
-// GET /unicorns/:name - Retrieve single unicorn by name
 app.get("/unicorns/:name", (req, res) => {
   const name = req.params.name;
   const unicorn = unicornsData.find(
@@ -119,48 +115,61 @@ app.get("/unicorns/:name", (req, res) => {
   res.json(unicorn);
 });
 
-// POST
 app.post("/unicorns", (req, res) => {
   try {
-    const { name, dob, loves, weight, vampires, gender, vaccinated } = req.body;
+    const {
+      name,
+      dob,
+      loves,
+      weight,
+      vampires,
+      gender,
+      vaccinated = true,
+    } = req.body;
 
-    // Validate
-    if (
-      !name ||
-      !dob ||
-      !loves ||
-      weight === undefined ||
-      gender === undefined
-    ) {
-      return res.status(400).json({ error: "Missing required fields" });
+    // Validation
+    if (!name || !dob || !loves || weight === undefined || !gender) {
+      return res.status(400).json({
+        error:
+          "Missing required fields: name, dob, loves, weight, and gender are required",
+      });
     }
 
-    // Check
-    if (unicornsData.some((u) => u.name.toLowerCase() === name.toLowerCase())) {
+    // Check for duplicate
+    const exists = unicornsData.some(
+      (u) => u.name.toLowerCase() === name.toLowerCase(),
+    );
+
+    if (exists) {
       return res
         .status(409)
-        .json({ error: "Unicorn with this name already exists" });
+        .json({ error: "A unicorn with this name already exists" });
     }
 
+    // Create new unicorn
     const newUnicorn = {
-      _id: Date.now().toString(), // Simple ID generation
+      _id: Date.now().toString(36) + Math.random().toString(36).substr(2),
       name,
       dob: new Date(dob).toISOString(),
       loves: Array.isArray(loves) ? loves : [loves],
       weight: parseFloat(weight),
       vampires: vampires ? parseInt(vampires) : undefined,
-      gender,
-      vaccinated: vaccinated !== undefined ? Boolean(vaccinated) : true,
+      gender: gender.toLowerCase(),
+      vaccinated: Boolean(vaccinated),
     };
 
     unicornsData.push(newUnicorn);
+    console.log(`Created new unicorn: ${name}`);
+
     res.status(201).json(newUnicorn);
   } catch (error) {
-    res.status(400).json({ error: "Invalid data format" });
+    console.error("Error creating unicorn:", error);
+    res
+      .status(400)
+      .json({ error: "Invalid data format", details: error.message });
   }
 });
 
-// PUT
 app.put("/unicorns/:name", (req, res) => {
   const name = req.params.name;
   const index = unicornsData.findIndex(
@@ -172,26 +181,29 @@ app.put("/unicorns/:name", (req, res) => {
   }
 
   try {
+    const unicorn = unicornsData[index];
     const { dob, loves, weight, vampires, gender, vaccinated } = req.body;
 
-    // Update
-    if (dob) unicornsData[index].dob = new Date(dob).toISOString();
-    if (loves)
-      unicornsData[index].loves = Array.isArray(loves) ? loves : [loves];
-    if (weight !== undefined) unicornsData[index].weight = parseFloat(weight);
-    if (vampires !== undefined)
-      unicornsData[index].vampires = parseInt(vampires);
-    if (gender) unicornsData[index].gender = gender;
-    if (vaccinated !== undefined)
-      unicornsData[index].vaccinated = Boolean(vaccinated);
+    // Update fields if provided
+    if (dob) unicorn.dob = new Date(dob).toISOString();
+    if (loves) unicorn.loves = Array.isArray(loves) ? loves : [loves];
+    if (weight !== undefined) unicorn.weight = parseFloat(weight);
+    if (vampires !== undefined) {
+      unicorn.vampires = vampires === "" ? undefined : parseInt(vampires);
+    }
+    if (gender) unicorn.gender = gender.toLowerCase();
+    if (vaccinated !== undefined) unicorn.vaccinated = Boolean(vaccinated);
 
-    res.json(unicornsData[index]);
+    console.log(`Updated unicorn: ${name}`);
+    res.json(unicorn);
   } catch (error) {
-    res.status(400).json({ error: "Invalid data format" });
+    console.error("Error updating unicorn:", error);
+    res
+      .status(400)
+      .json({ error: "Invalid data format", details: error.message });
   }
 });
 
-// DELETE
 app.delete("/unicorns/:name", (req, res) => {
   const name = req.params.name;
   const index = unicornsData.findIndex(
@@ -202,19 +214,41 @@ app.delete("/unicorns/:name", (req, res) => {
     return res.status(404).json({ error: "Unicorn not found" });
   }
 
-  const deletedUnicorn = unicornsData.splice(index, 1)[0];
+  const deleted = unicornsData.splice(index, 1)[0];
+  console.log(`Deleted unicorn: ${name}`);
+
   res.json({
     message: "Unicorn deleted successfully",
-    unicorn: deletedUnicorn,
+    unicorn: deleted,
   });
 });
 
-// Basic route
-app.get("/", (req, res) => {
-  res.json({ message: "Unicorn API is running!" });
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    unicornCount: unicornsData.length,
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// Starting server
+// Root endpoint
+app.get("/", (req, res) => {
+  res.json({
+    message: "🦄 Unicorn API is running!",
+    endpoints: {
+      getAll: "GET /unicorns",
+      getOne: "GET /unicorns/:name",
+      create: "POST /unicorns",
+      update: "PUT /unicorns/:name",
+      delete: "DELETE /unicorns/:name",
+      health: "GET /health",
+    },
+  });
+});
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Initial data loaded: ${unicornsData.length} unicorns`);
 });
